@@ -1,6 +1,12 @@
 # Steps to setup dev environment
 ### 0. If zsh is not installed, install it
 ```bash
+sudo apt install zsh
+```
+And make it default
+```bash
+chsh -s $(which zsh)
+```
 
 ### 1. Install ohmyzsh
 ```bash
@@ -20,6 +26,6 @@ brew install fzf
 ### 2. Copy repo's `.zshrc` to `~/.zshrc`
 
 ### 4. Install cursor cli (optional)
-``` bash
+```bash
 curl https://cursor.com/install -fsS | bash
 ```
