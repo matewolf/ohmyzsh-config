@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 # Bootstrap a plain machine (VM or bare metal) to match this shell setup.
 # Usage:
-#   ./install.sh              # full install
-#   ./install.sh --with-cursor  # also install Cursor CLI
+#   ./install.sh        # core install; prompts for optional tools
+#   ./install.sh --all  # install everything, no prompts
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+INSTALL_ALL=0
+WITH_KUBECTL=0
+WITH_GCLOUD=0
 WITH_CURSOR=0
 
 for arg in "$@"; do
   case "$arg" in
-    --with-cursor) WITH_CURSOR=1 ;;
+    --all) INSTALL_ALL=1 ;;
     -h|--help)
-      echo "Usage: $0 [--with-cursor]"
+      cat <<EOF
+Usage: $0 [--all]
+
+  (default)  Install core tooling, then ask interactively about
+             kubectl/kubectx, Google Cloud SDK, and Cursor CLI.
+  --all      Install everything without prompting.
+EOF
       exit 0
       ;;
     *)
@@ -27,6 +36,54 @@ info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()    { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33m==>\033[0m %s\n' "$*"; }
 fail()  { printf '\033[1;31m==>\033[0m %s\n' "$*" >&2; exit 1; }
+
+ask_yes_no() {
+  local prompt="$1"
+  local reply
+
+  if [[ ! -t 0 ]]; then
+    warn "Non-interactive stdin; answering no to: $prompt"
+    return 1
+  fi
+
+  while true; do
+    printf '\033[1;34m==>\033[0m %s [y/N] ' "$prompt"
+    read -r reply
+    case "${reply:-}" in
+      [yY]|[yY][eE][sS]) return 0 ;;
+      [nN]|[nN][oO]|"") return 1 ;;
+      *) echo "Please answer y or n." ;;
+    esac
+  done
+}
+
+resolve_optional_installs() {
+  if [[ "$INSTALL_ALL" -eq 1 ]]; then
+    WITH_KUBECTL=1
+    WITH_GCLOUD=1
+    WITH_CURSOR=1
+    ok "Installing everything (--all)"
+    return
+  fi
+
+  if ask_yes_no "Install kubectl and kubectx?"; then
+    WITH_KUBECTL=1
+  else
+    ok "Skipping kubectl and kubectx"
+  fi
+
+  if ask_yes_no "Install Google Cloud SDK?"; then
+    WITH_GCLOUD=1
+  else
+    ok "Skipping Google Cloud SDK"
+  fi
+
+  if ask_yes_no "Install Cursor CLI?"; then
+    WITH_CURSOR=1
+  else
+    ok "Skipping Cursor CLI"
+  fi
+}
 
 detect_os() {
   case "$(uname -s)" in
@@ -45,12 +102,23 @@ ensure_sudo() {
   if ! have sudo; then
     fail "sudo is required for package installs"
   fi
-  sudo -v
+  # Prefer non-interactive check (works over SSH without a TTY / with NOPASSWD).
+  if sudo -n true 2>/dev/null; then
+    return
+  fi
+  if [[ -t 0 ]]; then
+    sudo -v || fail "sudo authentication failed"
+    return
+  fi
+  fail "sudo needs a password, but this session is non-interactive. Re-run with a TTY (ssh -t) or configure NOPASSWD."
 }
 
-# Keep sudo alive while the script runs.
+# Keep sudo alive while the script runs (only needed when a timestamped credential is used).
 keep_sudo_alive() {
   if [[ "$(id -u)" -eq 0 ]] || ! have sudo; then
+    return
+  fi
+  if sudo -n true 2>/dev/null; then
     return
   fi
   while true; do
@@ -154,6 +222,10 @@ brew_install() {
 }
 
 install_gcloud() {
+  if [[ "$WITH_GCLOUD" -ne 1 ]]; then
+    return
+  fi
+
   if have gcloud; then
     ok "gcloud already installed"
     return
@@ -183,14 +255,22 @@ install_gcloud() {
   ok "google-cloud-sdk installed to $HOME/google-cloud-sdk"
 }
 
+install_kubectl() {
+  if [[ "$WITH_KUBECTL" -ne 1 ]]; then
+    return
+  fi
+
+  brew_install kubectl
+  brew_install kubectx
+}
+
 install_cli_tools() {
   brew_shellenv || fail "Homebrew is required"
 
   info "Installing CLI tools via Homebrew..."
   brew_install fzf
-  brew_install kubectx
-  brew_install kubectl
   brew_install git
+  install_kubectl
   install_gcloud
 
   # Key bindings / completion for fzf
@@ -307,26 +387,37 @@ install_cursor_cli() {
 }
 
 print_summary() {
+  local kubectl_line="  - kubectl / kubectx: skipped"
+  local gcloud_line="  - Google Cloud SDK: skipped"
+  local cursor_line="  - Cursor CLI: skipped"
+
+  [[ "$WITH_KUBECTL" -eq 1 ]] && kubectl_line="  - kubectl / kubectx: installed"
+  [[ "$WITH_GCLOUD" -eq 1 ]] && gcloud_line="  - Google Cloud SDK: installed"
+  [[ "$WITH_CURSOR" -eq 1 ]] && cursor_line="  - Cursor CLI: installed"
+
   cat <<EOF
 
 ------------------------------------------------------------
 Setup complete. This machine now has:
   - zsh + Oh My Zsh (robbyrussell)
-  - Homebrew + fzf, kubectl, kubectx, git, google-cloud-sdk
+  - Homebrew + fzf, git
   - nvm
   - custom plugins from this repo's .zshrc
   - ~/.zshrc from this repository
+$kubectl_line
+$gcloud_line
+$cursor_line
 
 Next steps:
   1. Start a new login shell:  exec zsh -l
   2. (Optional) install a Node version:  nvm install --lts
-  3. (Optional) auth to cloud:  gcloud auth login
 ------------------------------------------------------------
 EOF
 }
 
 main() {
   info "Bootstrapping shell environment from ohmyzsh-config"
+  resolve_optional_installs
   ensure_sudo
   keep_sudo_alive
   install_system_packages
