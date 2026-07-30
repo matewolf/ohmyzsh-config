@@ -1,31 +1,30 @@
-# Steps to setup dev environment
-### 0. If zsh is not installed, install it
+# ohmyzsh-config
+
+Bootstrap a plain VM (or fresh machine) with the same zsh setup used on a daily driver.
+
+## Install
+
 ```bash
-sudo apt install zsh
-```
-And make it default
-```bash
-chsh -s $(which zsh)
+git clone https://github.com/matewolf/ohmyzsh-config.git ~/.ohmyzsh-config && ~/.ohmyzsh-config/install.sh
 ```
 
-### 1. Install ohmyzsh
+Optional Cursor CLI:
+
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+./install.sh --with-cursor
 ```
 
-### 2. Install dependencies
-##### brew
+Then open a new shell:
+
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-##### fzf
-```bash
-brew install fzf
+exec zsh -l
 ```
 
-### 2. Copy repo's `.zshrc` to `~/.zshrc`
+## What it installs
 
-### 4. Install cursor cli (optional)
-```bash
-curl https://cursor.com/install -fsS | bash
-```
+- zsh (default shell) + Oh My Zsh
+- Homebrew
+- fzf, kubectl, kubectx, git, Google Cloud SDK
+- nvm
+- custom plugins required by `.zshrc`
+- this repo’s `.zshrc` as `~/.zshrc` (existing file is backed up)

@@ -1,3 +1,11 @@
+# Homebrew (Apple Silicon, Intel Mac, Linuxbrew)
+for brew_prefix in /opt/homebrew /usr/local /home/linuxbrew/.linuxbrew; do
+  if [ -x "$brew_prefix/bin/brew" ]; then
+    eval "$("$brew_prefix/bin/brew" shellenv)"
+    break
+  fi
+done
+
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -17,11 +25,15 @@ export NVM_DIR="$HOME/.nvm"
 alias kctx="kubectx"
 alias kns="kubens"
 
-# The next line updates PATH for the Google Cloud SDK.
-if [ -f '/opt/homebrew/share/google-cloud-sdk/path.zsh.inc' ]; then . '/opt/homebrew/share/google-cloud-sdk/path.zsh.inc'; fi
-
-# The next line enables shell command completion for gcloud.
-if [ -f '/opt/homebrew/share/google-cloud-sdk/completion.zsh.inc' ]; then . '/opt/homebrew/share/google-cloud-sdk/completion.zsh.inc'; fi
+# Google Cloud SDK (Homebrew or ~/google-cloud-sdk)
+if command -v brew >/dev/null 2>&1; then
+  _gcloud_sdk="$(brew --prefix)/share/google-cloud-sdk"
+  [ -f "$_gcloud_sdk/path.zsh.inc" ] && . "$_gcloud_sdk/path.zsh.inc"
+  [ -f "$_gcloud_sdk/completion.zsh.inc" ] && . "$_gcloud_sdk/completion.zsh.inc"
+  unset _gcloud_sdk
+fi
+if [ -f "$HOME/google-cloud-sdk/path.zsh.inc" ]; then . "$HOME/google-cloud-sdk/path.zsh.inc"; fi
+if [ -f "$HOME/google-cloud-sdk/completion.zsh.inc" ]; then . "$HOME/google-cloud-sdk/completion.zsh.inc"; fi
 
 # Aliases for usual GitHub operations
 alias gucb='git fetch && git pull'
