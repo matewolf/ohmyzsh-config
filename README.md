@@ -30,7 +30,7 @@ Always:
 - fzf, git
 - nvm
 - custom plugins required by `.zshrc`
-- this repo’s `.zshrc` as `~/.zshrc` (existing file is backed up)
+- this repo’s `.zshrc` as `~.zshrc` (existing file is backed up)
 
 Optional (prompted, or included with `--all`):
 - kubectl and kubectx
