@@ -4,17 +4,25 @@ Bootstrap a plain VM (or fresh machine) with the same zsh setup used on a daily 
 
 ## Install
 
-```bash
-git clone https://github.com/matewolf/ohmyzsh-config.git ~/.ohmyzsh-config && ~/.ohmyzsh-config/install.sh
-```
+One-liner (no clone):
 
-You will be asked interactively whether to install kubectl/kubectx, Google Cloud SDK, and Cursor CLI.
+```bash
+curl -fsSL https://raw.githubusercontent.com/matewolf/ohmyzsh-config/refs/heads/main/install.sh | bash
+```
 
 Install everything without prompts:
 
 ```bash
-~/.ohmyzsh-config/install.sh --all
+curl -fsSL https://raw.githubusercontent.com/matewolf/ohmyzsh-config/refs/heads/main/install.sh | bash -s -- --all
 ```
+
+Or clone first:
+
+```bash
+git clone https://github.com/matewolf/ohmyzsh-config.git ~/.ohmyzsh-config && ~/.ohmyzsh-config/install.sh
+```
+
+You will be asked interactively whether to install kubectl/kubectx, Google Cloud SDK, and Cursor CLI (when a TTY is available).
 
 Then open a new shell:
 
