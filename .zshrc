@@ -11,19 +11,34 @@ export ZSH="$HOME/.oh-my-zsh"
 
 ZSH_THEME="robbyrussell"
 
-plugins=(git kubectl kubectx kube-ps1 zsh-interactive-cd zsh-navigation-tools zsh-fzf-history-search)
+plugins=(git zsh-interactive-cd zsh-navigation-tools zsh-fzf-history-search)
+
+if command -v kubectl >/dev/null 2>&1; then
+  plugins+=(kubectl kube-ps1)
+  if [[ -d "${ZSH_CUSTOM:-$ZSH/custom}/plugins/kubectx" ]]; then
+    plugins+=(kubectx)
+  fi
+fi
 
 source $ZSH/oh-my-zsh.sh
 
-# Kube info
-PROMPT='$(kube_ps1) | %n@%m'$PROMPT
+# Header: user@machine (machine highlighted). Cluster/namespace only with kubectl.
+if command -v kubectl >/dev/null 2>&1 && (( $+functions[kube_ps1] )); then
+  PROMPT='$(kube_ps1) | %n@%F{magenta}%B%m%b%f'$PROMPT
+else
+  PROMPT='%n@%F{magenta}%B%m%b%f'$PROMPT
+fi
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
-alias kctx="kubectx"
-alias kns="kubens"
+if command -v kubectx >/dev/null 2>&1; then
+  alias kctx="kubectx"
+fi
+if command -v kubens >/dev/null 2>&1; then
+  alias kns="kubens"
+fi
 
 # Google Cloud SDK (Homebrew or ~/google-cloud-sdk)
 if command -v brew >/dev/null 2>&1; then

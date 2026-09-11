@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Bootstrap a plain machine (VM or bare metal) to match this shell setup.
 # Usage:
-#   ./install.sh              # core install; prompts for optional tools
-#   ./install.sh --all        # install everything, no prompts
+#   ./install.sh                 # core install; prompts for optional tools
+#   ./install.sh --all           # install everything, no prompts
+#   ./install.sh --update        # refresh ~/.zshrc and custom plugins
+#   ./install.sh --uninstall     # restore previous ~/.zshrc; remove our plugins
 #   curl -fsSL <raw-url> | bash
-#   curl -fsSL <raw-url> | bash -s -- --all
+#   curl -fsSL <raw-url> | bash -s -- --all|--update|--uninstall [--yes]
 set -euo pipefail
 
 REPO_RAW_BASE="${OHMYZSH_CONFIG_RAW_BASE:-https://raw.githubusercontent.com/matewolf/ohmyzsh-config/refs/heads/main}"
@@ -24,21 +26,36 @@ INSTALL_ALL=0
 WITH_KUBECTL=0
 WITH_GCLOUD=0
 WITH_CURSOR=0
+UPDATE=0
+UNINSTALL=0
+ASSUME_YES=0
 
 for arg in "$@"; do
   case "$arg" in
     --all) INSTALL_ALL=1 ;;
+    --update) UPDATE=1 ;;
+    --uninstall) UNINSTALL=1 ;;
+    --yes|-y) ASSUME_YES=1 ;;
     -h|--help)
       cat <<EOF
-Usage: $0 [--all]
+Usage: $0 [--all] [--update] [--uninstall] [--yes]
 
-  (default)  Install core tooling, then ask interactively about
-             kubectl/kubectx, Google Cloud SDK, and Cursor CLI.
-  --all      Install everything without prompting.
+  (default)     Install core tooling, then ask interactively about
+                kubectl/kubectx, Google Cloud SDK, and Cursor CLI.
+  --all         Install everything without prompting.
+  --update      On an existing machine, refresh ~/.zshrc from this repo
+                and update custom Oh My Zsh plugins. Does not reinstall
+                Homebrew, nvm, or optional CLIs.
+  --uninstall   Restore the original ~/.zshrc (oldest backup) and remove
+                plugins this script added. Leaves Homebrew, nvm, Oh My Zsh,
+                and brew packages in place unless you confirm extra removals.
+  --yes         Skip confirmation prompts (for --uninstall).
 
 Also supports:
   curl -fsSL $REPO_RAW_BASE/install.sh | bash
   curl -fsSL $REPO_RAW_BASE/install.sh | bash -s -- --all
+  curl -fsSL $REPO_RAW_BASE/install.sh | bash -s -- --update
+  curl -fsSL $REPO_RAW_BASE/install.sh | bash -s -- --uninstall --yes
 EOF
       exit 0
       ;;
@@ -48,6 +65,11 @@ EOF
       ;;
   esac
 done
+
+if [[ "$UPDATE" -eq 1 && "$UNINSTALL" -eq 1 ]]; then
+  echo "Use either --update or --uninstall, not both" >&2
+  exit 1
+fi
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()    { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
@@ -344,7 +366,16 @@ clone_plugin() {
 
   mkdir -p "$ZSH_CUSTOM_DIR/plugins"
   if [[ -d "$dest/.git" ]]; then
-    ok "Plugin $name already present"
+    if [[ "$UPDATE" -eq 1 ]]; then
+      info "Updating plugin: $name"
+      if git -C "$dest" pull --ff-only >/dev/null 2>&1; then
+        ok "Plugin $name updated"
+      else
+        warn "Could not update plugin $name"
+      fi
+    else
+      ok "Plugin $name already present"
+    fi
     return
   fi
 
@@ -355,10 +386,12 @@ clone_plugin() {
 
 install_custom_plugins() {
   info "Installing custom Oh My Zsh plugins..."
-  clone_plugin kube-ps1 "https://github.com/jonmosco/kube-ps1.git"
   clone_plugin zsh-interactive-cd "https://github.com/changyuheng/zsh-interactive-cd.git"
   clone_plugin zsh-fzf-history-search "https://github.com/joshskidmore/zsh-fzf-history-search.git"
-  clone_plugin kubectx "https://github.com/unixorn/kubectx-zshplugin.git"
+  if [[ "$WITH_KUBECTL" -eq 1 ]] || have kubectl; then
+    clone_plugin kube-ps1 "https://github.com/jonmosco/kube-ps1.git"
+    clone_plugin kubectx "https://github.com/unixorn/kubectx-zshplugin.git"
+  fi
   ok "Custom plugins ready"
 }
 
@@ -396,6 +429,11 @@ install_zshrc() {
   fi
 
   if [[ -f "$target_rc" || -L "$target_rc" ]]; then
+    if cmp -s "$source_rc" "$target_rc"; then
+      ok "~/.zshrc already up to date"
+      [[ -n "$tmp" ]] && rm -f "$tmp"
+      return
+    fi
     local backup="$target_rc.backup.$(date +%Y%m%d%H%M%S)"
     info "Backing up existing ~/.zshrc to $backup"
     mv "$target_rc" "$backup"
@@ -453,6 +491,126 @@ install_cursor_cli() {
   ok "Cursor CLI installed"
 }
 
+update_existing() {
+  info "Updating ohmyzsh-config on this machine"
+  brew_shellenv || true
+  have git || fail "git is required to update plugins"
+  have curl || fail "curl is required to fetch .zshrc when not running from a checkout"
+
+  if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
+    fail "Oh My Zsh is not installed. Run without --update to bootstrap this machine."
+  fi
+  install_custom_plugins
+  install_zshrc
+
+  cat <<EOF
+
+------------------------------------------------------------
+Update complete.
+  - ~/.zshrc refreshed from this repository
+  - custom Oh My Zsh plugins pulled / installed if missing
+
+Start a new login shell to pick up prompt changes:
+  exec zsh -l
+------------------------------------------------------------
+EOF
+}
+
+oldest_zshrc_backup() {
+  local backups=()
+  local f
+  for f in "$HOME"/.zshrc.backup.*; do
+    [[ -e "$f" ]] || continue
+    backups+=("$f")
+  done
+  if [[ "${#backups[@]}" -eq 0 ]]; then
+    return 1
+  fi
+  printf '%s\n' "${backups[@]}" | sort | head -n 1
+}
+
+remove_plugin() {
+  local name="$1"
+  local dest="$ZSH_CUSTOM_DIR/plugins/$name"
+  if [[ -d "$dest" ]]; then
+    info "Removing plugin: $name"
+    rm -rf "$dest"
+    ok "Removed $dest"
+  fi
+}
+
+uninstall_config() {
+  if [[ "$ASSUME_YES" -ne 1 ]]; then
+    if ! can_prompt; then
+      fail "Uninstall needs confirmation. Re-run with --uninstall --yes"
+    fi
+    if ! ask_yes_no "Remove this shell config (restore ~/.zshrc, delete our Oh My Zsh plugins)?"; then
+      warn "Uninstall cancelled"
+      exit 0
+    fi
+  fi
+
+  info "Uninstalling ohmyzsh-config"
+
+  local backup=""
+  if backup="$(oldest_zshrc_backup)"; then
+    if [[ -f "$HOME/.zshrc" || -L "$HOME/.zshrc" ]]; then
+      local removed="$HOME/.zshrc.removed.$(date +%Y%m%d%H%M%S)"
+      info "Saving current ~/.zshrc to $removed"
+      mv "$HOME/.zshrc" "$removed"
+    fi
+    info "Restoring ~/.zshrc from oldest backup: $backup"
+    cp "$backup" "$HOME/.zshrc"
+    ok "~/.zshrc restored"
+  else
+    warn "No ~/.zshrc.backup.* found; leaving current ~/.zshrc in place"
+  fi
+
+  remove_plugin zsh-interactive-cd
+  remove_plugin zsh-fzf-history-search
+  remove_plugin kube-ps1
+  remove_plugin kubectx
+
+  local remove_omz=0
+  local remove_nvm=0
+  if [[ "$ASSUME_YES" -eq 1 ]]; then
+    ok "Leaving Oh My Zsh, nvm, Homebrew, and brew packages installed"
+  else
+    if [[ -d "$HOME/.oh-my-zsh" ]] && ask_yes_no "Also remove Oh My Zsh (~/.oh-my-zsh)?"; then
+      remove_omz=1
+    fi
+    if [[ -d "$HOME/.nvm" ]] && ask_yes_no "Also remove nvm (~/.nvm)?"; then
+      remove_nvm=1
+    fi
+  fi
+
+  if [[ "$remove_omz" -eq 1 ]]; then
+    rm -rf "$HOME/.oh-my-zsh"
+    ok "Removed ~/.oh-my-zsh"
+  fi
+  if [[ "$remove_nvm" -eq 1 ]]; then
+    rm -rf "$HOME/.nvm"
+    ok "Removed ~/.nvm"
+  fi
+
+  cat <<EOF
+
+------------------------------------------------------------
+Uninstall complete.
+  - ~/.zshrc restored from backup (if one existed)
+  - custom plugins from this repo removed
+
+Left in place (not owned only by this script):
+  - Homebrew and brew packages (zsh, git, fzf, kubectl, ...)
+  - Google Cloud SDK / Cursor CLI if they were installed
+  - Oh My Zsh and nvm, unless you confirmed removal
+
+Open a new shell:
+  exec zsh -l
+------------------------------------------------------------
+EOF
+}
+
 print_summary() {
   local kubectl_line="  - kubectl / kubectx: skipped"
   local gcloud_line="  - Google Cloud SDK: skipped"
@@ -483,6 +641,16 @@ EOF
 }
 
 main() {
+  if [[ "$UNINSTALL" -eq 1 ]]; then
+    uninstall_config
+    return
+  fi
+
+  if [[ "$UPDATE" -eq 1 ]]; then
+    update_existing
+    return
+  fi
+
   info "Bootstrapping shell environment from ohmyzsh-config"
   resolve_optional_installs
   ensure_sudo

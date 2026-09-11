@@ -30,6 +30,36 @@ Then open a new shell:
 exec zsh -l
 ```
 
+## Update an existing machine
+
+Refresh `~/.zshrc` and custom plugins without reinstalling Homebrew, nvm, or optional CLIs:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/matewolf/ohmyzsh-config/refs/heads/main/install.sh | bash -s -- --update
+```
+
+Or from a clone:
+
+```bash
+~/.ohmyzsh-config/install.sh --update
+```
+
+Then `exec zsh -l`.
+
+## Uninstall
+
+Restore the original `~/.zshrc` (oldest `~/.zshrc.backup.*`) and remove plugins this script added. Homebrew, brew packages, Oh My Zsh, and nvm stay unless you confirm extra removals:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/matewolf/ohmyzsh-config/refs/heads/main/install.sh | bash -s -- --uninstall
+```
+
+Non-interactive:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/matewolf/ohmyzsh-config/refs/heads/main/install.sh | bash -s -- --uninstall --yes
+```
+
 ## What it installs
 
 Always:
